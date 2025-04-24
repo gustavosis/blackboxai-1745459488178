@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vista del Proveedor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css">
+  <style>
+    #map {
+      height: 400px;
+      width: 100%;
+      border-radius: 0.5rem;
+    }
+    .notification {
+      animation: slideIn 0.3s ease-out;
+    }
+    @keyframes slideIn {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <div class="container mx-auto p-4 max-w-md">
+    <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+      <!-- Header -->
+      <div class="bg-indigo-600 text-white p-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold">Panel del Proveedor</h1>
+        <div class="flex items-center space-x-2">
+          <span id="statusIndicator" class="h-3 w-3 rounded-full bg-green-400"></span>
+          <span>En línea</span>
+        </div>
+      </div>
+
+      <!-- Notifications Bar -->
+      <div id="notificationsBar" class="bg-yellow-50 p-2 border-b border-yellow-200 max-h-32 overflow-y-auto">
+        <!-- Notifications will appear here -->
+      </div>
+
+      <!-- Map -->
+      <div id="map" class="m-4"></div>
+
+      <!-- Job Request Modal (hidden by default) -->
+      <div id="jobModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg p-6 max-w-sm w-full">
+          <h3 class="text-lg font-bold mb-2" id="jobTitle">Nueva Solicitud</h3>
+          <p id="jobDetails" class="mb-4">Detalles del trabajo aparecerán aquí</p>
+          <div class="flex space-x-4">
+            <button id="acceptJob" class="flex-1 bg-green-600 text-white py-2 rounded hover:bg-green-700">Aceptar</button>
+            <button id="rejectJob" class="flex-1 bg-red-600 text-white py-2 rounded hover:bg-red-700">Rechazar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Provider Info -->
+      <div class="p-4 border-t border-gray-200">
+        <div class="flex items-center space-x-4">
+          <div class="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center">
+            <i class="fas fa-user text-indigo-600"></i>
+          </div>
+          <div>
+            <h3 class="font-bold" id="providerName">Nombre del Proveedor</h3>
+            <p class="text-sm text-gray-600" id="providerService">Servicio: Plomería</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    // Check authentication
+    if(!localStorage.getItem('providerLoggedIn')) {
+      window.location.href = 'login.html';
+    }
+
+    // Map initialization
+    let map, providerMarker;
+    let providerLocation = null;
+    let currentJob = null;
+
+    function initMap() {
+      map = L.map('map').setView([0, 0], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+
+      // Get provider location
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            providerLocation = [position.coords.latitude, position.coords.longitude];
+            map.setView(providerLocation, 13);
+            
+            if (providerMarker) {
+              providerMarker.setLatLng(providerLocation);
+            } else {
+              providerMarker = L.marker(providerLocation)
+                .addTo(map)
+                .bindPopup("Tu ubicación")
+                .openPopup();
+            }
+          },
+          (error) => {
+            console.error("Error getting location:", error);
+            // Default to Mexico City
+            providerLocation = [19.4326, -99.1332];
+            map.setView(providerLocation, 13);
+            providerMarker = L.marker(providerLocation)
+              .addTo(map)
+              .bindPopup("Ubicación predeterminada")
+              .openPopup();
+          },
+          { enableHighAccuracy: true }
+        );
+      } else {
+        alert("Geolocalización no soportada por tu navegador");
+        providerLocation = [19.4326, -99.1332];
+        map.setView(providerLocation, 13);
+        providerMarker = L.marker(providerLocation)
+          .addTo(map)
+          .bindPopup("Ubicación predeterminada")
+          .openPopup();
+      }
+    }
+
+    // Simulate job requests (in real app this would come from server)
+    function simulateJobRequest() {
+      const jobs = [
+        {
+          id: 1,
+          title: "Fuga de agua",
+          service: "Plomería",
+          location: [19.435, -99.135],
+          customer: "Juan Pérez",
+          distance: "1.2 km"
+        },
+        {
+          id: 2,
+          title: "Instalación eléctrica",
+          service: "Electricista",
+          location: [19.430, -99.130],
+          customer: "María García",
+          distance: "0.8 km"
+        }
+      ];
+
+      const job = jobs[Math.floor(Math.random() * jobs.length)];
+      addNotification(job);
+    }
+
+    // Add notification to bar
+    function addNotification(job) {
+      const notificationBar = document.getElementById('notificationsBar');
+      const notification = document.createElement('div');
+      notification.className = 'notification bg-white p-2 mb-2 rounded shadow-sm border-l-4 border-indigo-500';
+      notification.innerHTML = `
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="font-bold">${job.service}</p>
+            <p class="text-sm">${job.title} - ${job.distance}</p>
+          </div>
+          <button class="text-indigo-600" onclick="showJobModal(${job.id})">
+            <i class="fas fa-eye"></i>
+          </button>
+        </div>
+      `;
+      notificationBar.prepend(notification);
+    }
+
+    // Show job modal
+    window.showJobModal = function(jobId) {
+      // In real app, fetch job details
+      const job = {
+        id: jobId,
+        title: "Fuga de agua",
+        details: "Se necesita reparar fuga en tubería principal. Cliente: Juan Pérez. Distancia: 1.2 km",
+        price: "$500 MXN"
+      };
+
+      document.getElementById('jobTitle').textContent = job.title;
+      document.getElementById('jobDetails').textContent = job.details + "\n\nPago estimado: " + job.price;
+      document.getElementById('jobModal').classList.remove('hidden');
+      currentJob = job;
+    }
+
+    // Accept job
+    document.getElementById('acceptJob').addEventListener('click', function() {
+      alert(`Has aceptado el trabajo: ${currentJob.title}`);
+      document.getElementById('jobModal').classList.add('hidden');
+      // In real app, would notify server
+    });
+
+    // Reject job
+    document.getElementById('rejectJob').addEventListener('click', function() {
+      document.getElementById('jobModal').classList.add('hidden');
+      // In real app, would notify server
+    });
+
+    // Initialize
+    window.onload = function() {
+      initMap();
+      // Simulate job requests every 10-30 seconds
+      setInterval(simulateJobRequest, Math.random() * 20000 + 10000);
+      
+      // Set provider info from login
+      const providerEmail = localStorage.getItem('providerEmail');
+      document.getElementById('providerName').textContent = providerEmail || "Proveedor";
+      document.getElementById('providerService').textContent = "Servicio: " + 
+        (providerEmail ? providerEmail.split('@')[0] : "Plomería");
+    };
+  </script>
+</body>
+</html>
