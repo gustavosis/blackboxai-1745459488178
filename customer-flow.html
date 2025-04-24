@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Customer Service Flow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+  />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+  />
+  <style>
+    .hidden { display: none; }
+    #map {
+      height: 300px;
+      width: 100%;
+      border-radius: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .job-icon {
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .job-icon:hover {
+      transform: scale(1.2);
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4">
+  <div class="w-full max-w-md bg-white rounded-lg shadow-lg p-6">
+    <!-- Scene 1: Contact Provider -->
+    <section id="scene1" class="scene">
+      <h2 class="text-2xl font-semibold mb-4">Contact the Provider</h2>
+      <div id="map"></div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-2">Filter by Job Type</label>
+        <div class="flex space-x-4 overflow-x-auto pb-2">
+          <div class="job-icon text-indigo-600 text-3xl" title="Plumbing"><i class="fas fa-wrench"></i></div>
+          <div class="job-icon text-green-600 text-3xl" title="Electrician"><i class="fas fa-bolt"></i></div>
+          <div class="job-icon text-yellow-600 text-3xl" title="Cleaning"><i class="fas fa-broom"></i></div>
+          <div class="job-icon text-red-600 text-3xl" title="Gardening"><i class="fas fa-seedling"></i></div>
+          <div class="job-icon text-pink-600 text-3xl" title="Babysitting"><i class="fas fa-baby"></i></div>
+          <div class="job-icon text-purple-600 text-3xl" title="Tutoring"><i class="fas fa-book"></i></div>
+        </div>
+      </div>
+      <div class="mb-4">
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="Search providers..."
+          class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
+        />
+      </div>
+      <div id="providerList" class="max-h-48 overflow-y-auto border border-gray-200 rounded-md p-2 space-y-2">
+        <!-- Providers will be listed here -->
+      </div>
+      <button id="toScene2Btn" class="w-full bg-indigo-600 text-white py-2 rounded-md hover:bg-indigo-700 transition mt-4" disabled>
+        Next: Share Your Location
+      </button>
+    </section>
+
+    <!-- Scene 2: Share Location -->
+    <section id="scene2" class="scene hidden">
+      <h2 class="text-2xl font-semibold mb-4">Share Your Location</h2>
+      <p class="mb-4 text-gray-700">Allow location access to share your location with the provider.</p>
+      <button id="shareLocationBtn" class="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition mb-4">
+        Share Location
+      </button>
+      <p id="locationStatus" class="text-sm text-gray-600"></p>
+    </section>
+
+    <!-- Scene 3: Provider On The Way -->
+    <section id="scene3" class="scene hidden text-center">
+      <h2 class="text-2xl font-semibold mb-4">Provider is on the way!</h2>
+      <i class="fas fa-truck-moving text-indigo-600 text-6xl mb-4"></i>
+      <p class="text-gray-700 mb-6">Thank you for sharing your location. The provider is heading to your location now.</p>
+      <button id="restartBtn" class="bg-indigo-600 text-white py-2 px-6 rounded-md hover:bg-indigo-700 transition">
+        Start Over
+      </button>
+    </section>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const scene1 = document.getElementById('scene1');
+    const scene2 = document.getElementById('scene2');
+    const scene3 = document.getElementById('scene3');
+    const toScene2Btn = document.getElementById('toScene2Btn');
+    const shareLocationBtn = document.getElementById('shareLocationBtn');
+    const locationStatus = document.getElementById('locationStatus');
+    const restartBtn = document.getElementById('restartBtn');
+    const providerList = document.getElementById('providerList');
+    const searchInput = document.getElementById('searchInput');
+
+    let selectedProvider = null;
+    let userLatLng = null;
+    let map, userMarker, providerMarkers = [];
+
+    // Initialize map
+    function initMap() {
+      map = L.map('map').setView([0, 0], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+
+      // Try to get user location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            userLatLng = [pos.coords.latitude, pos.coords.longitude];
+            map.setView(userLatLng, 13);
+            userMarker = L.marker(userLatLng).addTo(map).bindPopup("You are here").openPopup();
+            loadProviders();
+          },
+          () => {
+            alert("Could not get your location. Showing default location.");
+            userLatLng = [40.7128, -74.0060]; // Default to New York City
+            map.setView(userLatLng, 13);
+            userMarker = L.marker(userLatLng).addTo(map).bindPopup("Default location").openPopup();
+            loadProviders();
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by your browser.");
+        userLatLng = [40.7128, -74.0060];
+        map.setView(userLatLng, 13);
+        userMarker = L.marker(userLatLng).addTo(map).bindPopup("Default location").openPopup();
+        loadProviders();
+      }
+    }
+
+    // Dummy providers data with lat/lng and job type
+    const providers = [
+      { id: 1, name: "John's Plumbing", lat: 40.715, lng: -74.002, job: "Plumbing" },
+      { id: 2, name: "Electric Experts", lat: 40.710, lng: -74.010, job: "Electrician" },
+      { id: 3, name: "Clean & Shine", lat: 40.720, lng: -74.005, job: "Cleaning" },
+      { id: 4, name: "Garden Gurus", lat: 40.713, lng: -74.008, job: "Gardening" },
+      { id: 5, name: "Baby Care", lat: 40.718, lng: -74.003, job: "Babysitting" },
+      { id: 6, name: "Tutor Time", lat: 40.716, lng: -74.007, job: "Tutoring" }
+    ];
+
+    // Load providers on map and list
+    function loadProviders(filterJob = null, searchTerm = "") {
+      // Clear existing markers
+      providerMarkers.forEach(marker => map.removeLayer(marker));
+      providerMarkers = [];
+      providerList.innerHTML = "";
+
+      const filteredProviders = providers.filter(p => {
+        const matchesJob = filterJob ? p.job === filterJob : true;
+        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesJob && matchesSearch;
+      });
+
+      filteredProviders.forEach(p => {
+        const marker = L.marker([p.lat, p.lng]).addTo(map).bindPopup(p.name + " (" + p.job + ")");
+        marker.on('click', () => {
+          selectProvider(p);
+        });
+        providerMarkers.push(marker);
+
+        const providerItem = document.createElement('div');
+        providerItem.className = "p-2 border border-gray-300 rounded cursor-pointer hover:bg-indigo-100";
+        providerItem.textContent = p.name + " - " + p.job;
+        providerItem.onclick = () => selectProvider(p);
+        providerList.appendChild(providerItem);
+      });
+
+      updateNextButton();
+    }
+
+    // Select a provider
+    function selectProvider(provider) {
+      selectedProvider = provider;
+      // Highlight selected provider in list
+      Array.from(providerList.children).forEach(child => {
+        child.classList.remove('bg-indigo-200');
+        if (child.textContent.includes(provider.name)) {
+          child.classList.add('bg-indigo-200');
+        }
+      });
+      updateNextButton();
+    }
+
+    // Update Next button enabled state
+    function updateNextButton() {
+      toScene2Btn.disabled = !selectedProvider;
+    }
+
+    // Filter by job icons
+    document.querySelectorAll('.job-icon').forEach(icon => {
+      icon.addEventListener('click', () => {
+        const job = icon.title;
+        if (icon.classList.contains('selected')) {
+          icon.classList.remove('selected');
+          loadProviders(null, searchInput.value);
+        } else {
+          document.querySelectorAll('.job-icon').forEach(i => i.classList.remove('selected'));
+          icon.classList.add('selected');
+          loadProviders(job, searchInput.value);
+        }
+      });
+    });
+
+    // Search input filter
+    searchInput.addEventListener('input', () => {
+      const selectedIcon = document.querySelector('.job-icon.selected');
+      const job = selectedIcon ? selectedIcon.title : null;
+      loadProviders(job, searchInput.value);
+    });
+
+    toScene2Btn.addEventListener('click', () => {
+      if (!selectedProvider) return;
+      scene1.classList.add('hidden');
+      scene2.classList.remove('hidden');
+    });
+
+    shareLocationBtn.addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        locationStatus.textContent = 'Geolocation is not supported by your browser.';
+        return;
+      }
+      locationStatus.textContent = 'Locating…';
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          locationStatus.textContent = `Location shared: Latitude ${position.coords.latitude.toFixed(4)}, Longitude ${position.coords.longitude.toFixed(4)}`;
+          // Here you could send location and selectedProvider info to backend API
+          setTimeout(() => {
+            scene2.classList.add('hidden');
+            scene3.classList.remove('hidden');
+          }, 1500);
+        },
+        () => {
+          locationStatus.textContent = 'Unable to retrieve your location.';
+        }
+      );
+    });
+
+    restartBtn.addEventListener('click', () => {
+      scene3.classList.add('hidden');
+      scene1.classList.remove('hidden');
+      selectedProvider = null;
+      updateNextButton();
+      locationStatus.textContent = '';
+      searchInput.value = '';
+      document.querySelectorAll('.job-icon').forEach(i => i.classList.remove('selected'));
+      loadProviders();
+    });
+
+    // Initialize map and providers on page load
+    window.onload = () => {
+      initMap();
+    };
+  </script>
+</body>
+</html>
